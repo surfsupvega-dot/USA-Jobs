@@ -1,0 +1,56 @@
+name: USAJOBS Watch
+
+on:
+  schedule:
+    # 03:00 UTC ≈ 8 PM PDT (summer)
+    - cron: "0 3 * * *"
+    # 04:00 UTC ≈ 8 PM PST (winter)
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # allow committing seen_usajobs.json back to the repo
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run watcher (enforces 8 PM America/Los_Angeles)
+        env:
+          USAJOBS_USER_AGENT: ${{ secrets.USAJOBS_USER_AGENT }}
+          USAJOBS_API_KEY:    ${{ secrets.USAJOBS_API_KEY }}
+          DISCORD_WEBHOOK:    ${{ secrets.DISCORD_WEBHOOK }}
+          ENFORCE_LOCAL_8PM:  "1"
+        run: python usajobs_watch.py
+
+      - name: Persist seen_usajobs.json (avoid duplicate alerts)
+        if: success()
+        run: |
+          if [ -f seen_usajobs.json ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add seen_usajobs.json
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+            else
+              BRANCH="${GITHUB_REF##*/}"
+              git commit -m "Update seen_usajobs.json [skip ci]"
+              git pull --rebase origin "$BRANCH"
+              git push origin HEAD:"$BRANCH"
+            fi
+          else
+            echo "seen_usajobs.json not created this run."
+          fi
