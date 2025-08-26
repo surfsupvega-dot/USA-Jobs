@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+        - name: Preflight — verify required env vars exist
+  run: |
+    test -n "${USAJOBS_USER_AGENT}" || (echo "Missing USAJOBS_USER_AGENT" && exit 1)
+    test -n "${USAJOBS_API_KEY}"    || (echo "Missing USAJOBS_API_KEY" && exit 1)
+    test -n "${DISCORD_WEBHOOK}"    || (echo "Missing DISCORD_WEBHOOK" && exit 1)
+
       - name: Run watcher (enforces 8 PM America/Los_Angeles)
         env:
           USAJOBS_USER_AGENT: ${{ secrets.USAJOBS_USER_AGENT }}
