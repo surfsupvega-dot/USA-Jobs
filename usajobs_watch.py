@@ -18,8 +18,8 @@ PARAMS = {
     # Grade range (GS-09 to GS-12)
     "PayGradeLow": "09",
     "PayGradeHigh": "12",
-    # Return full fields
-    "Fields": "Full",
+    # Return all fields
+    "Fields": "All",
     # Don't restrict who may apply (public/status/all)
     "WhoMayApply": "all",
     # Sort newest first
@@ -170,7 +170,6 @@ def run_once() -> None:
         print(err)
         if NOTIFY_FETCH_FAILURE:
             send_discord(err)
-        # Do not fail the workflow hard; we already alerted.
         return
 
     # Parse results
