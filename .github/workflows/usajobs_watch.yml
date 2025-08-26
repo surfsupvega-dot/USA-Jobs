@@ -34,6 +34,14 @@ jobs:
     test -n "${USAJOBS_API_KEY}"    || (echo "Missing USAJOBS_API_KEY" && exit 1)
     test -n "${DISCORD_WEBHOOK}"    || (echo "Missing DISCORD_WEBHOOK" && exit 1)
 
+    - name: Send Discord test ping
+  run: |
+    curl -sS -X POST -H "Content-Type: application/json" \
+      -d '{"content":"✅ GitHub Actions can reach Discord (preflight ping)"}' \
+      "$DISCORD_WEBHOOK" \
+    || (echo "Discord ping failed" && exit 1)
+
+
       - name: Run watcher (enforces 8 PM America/Los_Angeles)
         env:
           USAJOBS_USER_AGENT: ${{ secrets.USAJOBS_USER_AGENT }}
