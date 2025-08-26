@@ -93,8 +93,14 @@ def send_discord(message: str) -> None:
         return
     try:
         r = requests.post(DISCORD_WH, json={"content": message}, timeout=15)
-        if r.status_code >= 400:
-            print(f"[WARN] Discord webhook HTTP {r.status_code}: {r.text[:200]}")
+        # Discord returns 204 No Content on success
+        if r.status_code == 204:
+            print("[OK] Discord accepted message (204).")
+        elif 200 <= r.status_code < 300:
+            print(f"[OK] Discord HTTP {r.status_code}.")
+        else:
+            body = (r.text or "")[:200]
+            print(f"[WARN] Discord webhook HTTP {r.status_code}: {body}")
     except Exception as e:
         print(f"[WARN] Discord send failed: {e}")
 
