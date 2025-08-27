@@ -2,7 +2,7 @@
 import os, json, time, hashlib, re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 import requests
 from requests.exceptions import RequestException
@@ -10,7 +10,7 @@ from requests.exceptions import RequestException
 # ===================== QUERY CONFIG =====================
 BASE = "https://data.usajobs.gov/api/Search"
 PARAMS = {
-    # Series 1176 and 1173 (USAJOBS allows multiple values with colon ':' )
+    # Series 1176 and 1173
     "JobCategoryCode": "1176:1173",
     # 92055 (Camp Pendleton) within 25 miles
     "LocationName": "92055",
@@ -25,32 +25,27 @@ PARAMS = {
     # Sort newest first
     "SortField": "openingdate",
     "SortDirection": "desc",
-    # Up to 50 per page (raise if desired)
+    # Up to 50 per page
     "ResultsPerPage": "50",
 }
 # ========================================================
 
 # ===================== NOTIFY/BEHAVIOR ==================
-# Set to "1" (default) to enforce running only at 8 PM America/Los_Angeles
 ENFORCE_LOCAL_8PM = os.getenv("ENFORCE_LOCAL_8PM", "1") == "1"
 
-# Alert when the API/site fails or times out
 NOTIFY_FETCH_FAILURE = True
-# Alert when the query returns zero results
 NOTIFY_ZERO_RESULTS = True
-# Alert when there ARE results, but no NEW ones since last run (can be noisy)
 NOTIFY_NO_NEW_ITEMS = True
 
-# HTTP timeouts & retries
 TIMEOUT_SECONDS = 30
 RETRY_ATTEMPTS = 3
-RETRY_BACKOFF = 5  # seconds; backoff is exponential: 5, 10, 20...
+RETRY_BACKOFF = 5
 # ========================================================
 
 # ===================== AUTH / HEADERS ===================
-USER_AGENT = os.getenv("USAJOBS_USER_AGENT")  # your email (required by USAJOBS)
-API_KEY    = os.getenv("USAJOBS_API_KEY")     # your USAJOBS API key
-DISCORD_WH = os.getenv("DISCORD_WEBHOOK")     # your Discord webhook URL (for alerts)
+USER_AGENT = os.getenv("USAJOBS_USER_AGENT")
+API_KEY    = os.getenv("USAJOBS_API_KEY")
+DISCORD_WH = os.getenv("DISCORD_WEBHOOK")
 
 HEADERS = {
     "User-Agent": USER_AGENT or "",
@@ -61,7 +56,7 @@ HEADERS = {
 
 SEEN_PATH = "seen_usajobs.json"
 
-
+# ===================== HELPERS ==========================
 def load_seen(path: str) -> Dict[str, Any]:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -69,23 +64,18 @@ def load_seen(path: str) -> Dict[str, Any]:
     except Exception:
         return {}
 
-
 def save_seen(path: str, data: Dict[str, Any]) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
 
-
 def norm(s: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip()
 
-
 def jid(rec: Dict[str, Any]) -> str:
-    # Stable ID from announcement + title + URL
     key = f"{rec.get('MatchedObjectId','')}|{rec.get('PositionTitle','')}|{(rec.get('ApplyURI') or [None])[0] or rec.get('PositionURI','')}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
-
 
 def send_discord(message: str) -> None:
     if not DISCORD_WH:
@@ -93,7 +83,6 @@ def send_discord(message: str) -> None:
         return
     try:
         r = requests.post(DISCORD_WH, json={"content": message}, timeout=15)
-        # Discord returns 204 No Content on success
         if r.status_code == 204:
             print("[OK] Discord accepted message (204).")
         elif 200 <= r.status_code < 300:
@@ -103,7 +92,6 @@ def send_discord(message: str) -> None:
             print(f"[WARN] Discord webhook HTTP {r.status_code}: {body}")
     except Exception as e:
         print(f"[WARN] Discord send failed: {e}")
-
 
 def fetch_with_retries(url: str, params: Dict[str, str], headers: Dict[str, str],
                        attempts: int = 3, backoff: int = 5, timeout: int = 30) -> Dict[str, Any]:
@@ -123,14 +111,11 @@ def fetch_with_retries(url: str, params: Dict[str, str], headers: Dict[str, str]
             sleep_for = backoff * (2 ** (i - 1))
             print(f"[INFO] Backing off {sleep_for}s before retry...")
             time.sleep(sleep_for)
-    # Exhausted attempts
     raise RuntimeError(last_err or "Unknown fetch error")
-
 
 def format_msg(obj: Dict[str, Any]) -> str:
     title = obj.get("PositionTitle", "Untitled")
     org   = obj.get("OrganizationName", "")
-    # USAJOBS can return either a list of dicts in PositionLocationDisplay or a string
     loc_field = obj.get("PositionLocationDisplay")
     if isinstance(loc_field, list):
         locs = ", ".join(sorted({loc.get("LocationName","") for loc in loc_field if isinstance(loc, dict)}))
@@ -141,23 +126,20 @@ def format_msg(obj: Dict[str, Any]) -> str:
     closing = f" | Closes: {obj['ApplicationCloseDate']}" if obj.get("ApplicationCloseDate") else ""
     return f"🔔 **{title}** ({grade}) @ {org}\n📍 {locs}{closing}\n{url}"
 
-
 def guard_local_8pm() -> bool:
-    """Return True only if it is 8:00 PM America/Los_Angeles right now."""
     tz = ZoneInfo("America/Los_Angeles")
     now = datetime.now(tz)
-    return now.hour == 20  # 8 PM local hour (minute-precision is fine via cron)
+    return now.hour == 20
+# ========================================================
 
-
+# ===================== MAIN =============================
 def run_once() -> None:
-    # Sanity checks
     if not USER_AGENT or not API_KEY:
         msg = "❌ USAJOBS credentials missing: set USAJOBS_USER_AGENT and USAJOBS_API_KEY."
         print(msg)
         send_discord(msg)
         return
 
-    # Fetch
     try:
         data = fetch_with_retries(
             BASE, PARAMS, HEADERS,
@@ -172,14 +154,12 @@ def run_once() -> None:
             send_discord(err)
         return
 
-    # Parse results
     sr = (data.get("SearchResult", {}) or {})
     items = (sr.get("SearchResultItems", []) or [])
     total = sr.get("SearchResultCount", len(items))
 
     print(f"[INFO] Fetched {total} results; items array length={len(items)}.")
 
-    # Zero results alert
     if (total == 0 or len(items) == 0):
         info = ("ℹ️ No results for USAJOBS query today "
                 f"(Series 1176/1173, 92055±25mi, GS09–GS12).")
@@ -188,7 +168,6 @@ def run_once() -> None:
             send_discord(info)
         return
 
-    # Build light records and de-dup
     seen = load_seen(SEEN_PATH)
     new_count = 0
     for item in items:
@@ -208,6 +187,12 @@ def run_once() -> None:
         key = jid(rec)
         if key in seen:
             continue
+
+        # Extra filter on job title
+        title = (rec.get("PositionTitle") or "").lower()
+        if "building management" not in title and "housing management" not in title:
+            continue  # skip jobs that don't match the desired titles
+
         # New item → alert + record
         send_discord(format_msg(rec))
         seen[key] = {
@@ -217,7 +202,6 @@ def run_once() -> None:
         }
         new_count += 1
 
-    # Persist dedupe state
     if new_count:
         save_seen(SEEN_PATH, seen)
         print(f"[INFO] Saved {new_count} new items.")
@@ -227,10 +211,7 @@ def run_once() -> None:
         if NOTIFY_NO_NEW_ITEMS:
             send_discord(msg)
 
-
 if __name__ == "__main__":
-    # When run from GitHub Actions, we schedule two UTC crons (03:00 and 04:00)
-    # and only proceed if it's actually 8 PM America/Los_Angeles.
     if ENFORCE_LOCAL_8PM and not guard_local_8pm():
         print("[INFO] Skipping run (not 8 PM America/Los_Angeles).")
     else:
