@@ -10,22 +10,15 @@ from requests.exceptions import RequestException
 # ===================== QUERY CONFIG =====================
 BASE = "https://data.usajobs.gov/api/Search"
 PARAMS = {
-    # Series 1176 and 1173
-    "JobCategoryCode": "1176:1173",
-    # 92055 (Camp Pendleton) within 25 miles
-    "LocationName": "92055",
-    "Radius": "25",
-    # Grade range (GS-09 to GS-12)
-    "PayGradeLow": "09",
-    "PayGradeHigh": "12",
-    # Return all fields
+    "JobCategoryCode": "1176:1173",    # Series 1176 and 1173
+    "LocationName": "92055",           # Camp Pendleton ZIP
+    "Radius": "25",                    # 25 miles
+    "PayGradeLow": "09",               # GS-09
+    "PayGradeHigh": "12",              # GS-12
     "Fields": "All",
-    # Don't restrict who may apply (public/status/all)
     "WhoMayApply": "all",
-    # Sort newest first
     "SortField": "openingdate",
     "SortDirection": "desc",
-    # Up to 50 per page
     "ResultsPerPage": "50",
 }
 # ========================================================
@@ -162,7 +155,7 @@ def run_once() -> None:
 
     if (total == 0 or len(items) == 0):
         info = ("ℹ️ No results for USAJOBS query today "
-                f"(Series 1176/1173, 92055±25mi, GS09–GS12).")
+                f"(Series 1176/1173, 92055±25mi, GS09–GS12 + NF-02).")
         print(info)
         if NOTIFY_ZERO_RESULTS:
             send_discord(info)
@@ -188,10 +181,16 @@ def run_once() -> None:
         if key in seen:
             continue
 
-        # Extra filter on job title
+        # 🔎 Extra filters:
         title = (rec.get("PositionTitle") or "").lower()
-        if "building management" not in title and "housing management" not in title:
-            continue  # skip jobs that don't match the desired titles
+        grades = [g.lower() for g in (rec.get("JobGrade") or [])]
+
+        if (
+            "building management" not in title
+            and "housing management" not in title
+            and not any("nf-02" in g or "nf-2" in g for g in grades)
+        ):
+            continue  # skip jobs that don't match desired filters
 
         # New item → alert + record
         send_discord(format_msg(rec))
