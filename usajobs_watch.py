@@ -155,7 +155,7 @@ def run_once() -> None:
 
     if (total == 0 or len(items) == 0):
         info = ("ℹ️ No results for USAJOBS query today "
-                f"(Series 1176/1173, 92055±25mi, GS09–GS12 + NF-02).")
+                f"(Series 1176/1173, 92055±25mi, GS09–GS12).")
         print(info)
         if NOTIFY_ZERO_RESULTS:
             send_discord(info)
@@ -181,16 +181,10 @@ def run_once() -> None:
         if key in seen:
             continue
 
-        # 🔎 Extra filters:
+        # 🔎 Extra filter on job title only
         title = (rec.get("PositionTitle") or "").lower()
-        grades = [g.lower() for g in (rec.get("JobGrade") or [])]
-
-        if (
-            "building management" not in title
-            and "housing management" not in title
-            and not any("nf-02" in g or "nf-2" in g for g in grades)
-        ):
-            continue  # skip jobs that don't match desired filters
+        if "building management" not in title and "housing management" not in title:
+            continue  # skip jobs that don't match desired titles
 
         # New item → alert + record
         send_discord(format_msg(rec))
