@@ -2,14 +2,12 @@ name: USAJOBS Watch
 
 on:
   schedule:
-    # 03:00 UTC ≈ 8 PM PDT (summer)
-    - cron: "0 3 * * *"
-    # 04:00 UTC ≈ 8 PM PST (winter)
-    - cron: "0 4 * * *"
+    - cron: "0 3 * * *"   # 8 PM PDT
+    - cron: "0 4 * * *"   # 8 PM PST
   workflow_dispatch:
 
 permissions:
-  contents: write  # allow committing seen_usajobs.json back to the repo
+  contents: write
 
 jobs:
   run:
@@ -29,12 +27,18 @@ jobs:
         run: pip install requests
 
       - name: Preflight — verify required env vars exist
+        env:
+          USAJOBS_USER_AGENT: ${{ secrets.USAJOBS_USER_AGENT }}
+          USAJOBS_API_KEY:    ${{ secrets.USAJOBS_API_KEY }}
+          DISCORD_WEBHOOK:    ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           test -n "${USAJOBS_USER_AGENT}" || (echo "Missing USAJOBS_USER_AGENT" && exit 1)
           test -n "${USAJOBS_API_KEY}"    || (echo "Missing USAJOBS_API_KEY" && exit 1)
           test -n "${DISCORD_WEBHOOK}"    || (echo "Missing DISCORD_WEBHOOK" && exit 1)
 
       - name: Send Discord test ping
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           curl -sS -X POST -H "Content-Type: application/json" \
             -d '{"content":"✅ GitHub Actions can reach Discord (preflight ping)"}' \
